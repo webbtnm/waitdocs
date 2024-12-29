@@ -1,48 +1,31 @@
-
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from ..db import SessionLocal
-from .doc_models import Document
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+from ..db import get_db
 
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 @router.get("/documents")
-def get_documents(db: Session = Depends(get_db)):
-    return db.query(Document).all()
+def get_documents(db = Depends(get_db)):
+    return list(db["documents"].find())
 
 @router.post("/documents")
-def create_document(userid: int, name: str, description: str, db: Session = Depends(get_db)):
-    doc = Document(userid=userid, name=name, description=description)
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
+def create_document(userid: str, name: str, description: str, db = Depends(get_db)):
+    doc = {"userid": userid, "name": name, "description": description}
+    result = db["documents"].insert_one(doc)
+    doc["_id"] = str(result.inserted_id)
     return doc
 
 @router.get("/documents/{documentid}")
-def get_document(documentid: int, db: Session = Depends(get_db)):
-    return db.query(Document).filter(Document.documentid == documentid).first()
+def get_document(documentid: str, db = Depends(get_db)):
+    return db["documents"].find_one({"_id": ObjectId(documentid)})
 
 @router.put("/documents/{documentid}")
-def update_document(documentid: int, name: str, description: str, db: Session = Depends(get_db)):
-    doc = db.query(Document).filter(Document.documentid == documentid).first()
-    if doc:
-        doc.name = name
-        doc.description = description
-        db.commit()
-        db.refresh(doc)
-    return doc
+def update_document(documentid: str, name: str, description: str, db = Depends(get_db)):
+    db["documents"].update_one({"_id": ObjectId(documentid)}, {"$set": {"name": name, "description": description}})
+    return db["documents"].find_one({"_id": ObjectId(documentid)})
 
 @router.delete("/documents/{documentid}")
-def delete_document(documentid: int, db: Session = Depends(get_db)):
-    doc = db.query(Document).filter(Document.documentid == documentid).first()
-    if doc:
-        db.delete(doc)
-        db.commit()
+def delete_document(documentid: str, db = Depends(get_db)):
+    db["documents"].delete_one({"_id": ObjectId(documentid)})
     return {"deleted": documentid}

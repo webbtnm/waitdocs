@@ -1,48 +1,31 @@
-
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from ..db import SessionLocal
-from .user_models import User
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+from ..db import get_db
 
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 @router.get("/users")
-def get_users(db: Session = Depends(get_db)):
-    return db.query(User).all()
+def get_users(db = Depends(get_db)):
+    return list(db["users"].find())
 
 @router.post("/users")
-def create_user(name: str, status: int, db: Session = Depends(get_db)):
-    new_user = User(name=name, status=status)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+def create_user(name: str, status: int, db = Depends(get_db)):
+    new_user = {"name": name, "status": status}
+    result = db["users"].insert_one(new_user)
+    new_user["_id"] = str(result.inserted_id)
     return new_user
 
 @router.get("/users/{userid}")
-def get_user(userid: int, db: Session = Depends(get_db)):
-    return db.query(User).filter(User.userid == userid).first()
+def get_user(userid: str, db = Depends(get_db)):
+    return db["users"].find_one({"_id": ObjectId(userid)})
 
 @router.put("/users/{userid}")
-def update_user(userid: int, name: str, status: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.userid == userid).first()
-    if user:
-        user.name = name
-        user.status = status
-        db.commit()
-        db.refresh(user)
-    return user
+def update_user(userid: str, name: str, status: int, db = Depends(get_db)):
+    db["users"].update_one({"_id": ObjectId(userid)}, {"$set": {"name": name, "status": status}})
+    return db["users"].find_one({"_id": ObjectId(userid)})
 
 @router.delete("/users/{userid}")
-def delete_user(userid: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.userid == userid).first()
-    if user:
-        db.delete(user)
-        db.commit()
+def delete_user(userid: str, db = Depends(get_db)):
+    db["users"].delete_one({"_id": ObjectId(userid)})
     return {"deleted": userid}
